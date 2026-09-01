@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.mp4
+*.part
+host.log
+com.mediadownload.host.json
+native-host/build/
+native-host/dist/
+native-host/release/
+native-host/build.log
+native-host/host.spec
+*.pem
