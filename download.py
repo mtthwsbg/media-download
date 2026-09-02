@@ -23,6 +23,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
@@ -75,17 +76,39 @@ class Result:
         return self.media or self.folder
 
 
+# Query parameters that are about tracking who shared what, never about which
+# post you meant. A share sheet adds several; img_index in particular says
+# "start at picture 9", which is not a thing we want to honour when the point
+# is to get all of them.
+JUNK_PARAMS = {
+    "igsh", "igsi", "img_index", "utm_source", "utm_medium", "utm_campaign",
+    "utm_content", "utm_term", "fbclid", "gclid", "share_id", "si", "feature",
+    "_nc_cat", "ref_src", "ref_url", "s", "t", "is_from_rle",
+}
+
+
 def clean_link(text):
     """
     Tidy up a pasted link.
 
     Copying a link can quietly bring along invisible characters or wrapping
     quotes. Without this they look like a real link and fail confusingly.
+    A link shared from an app also arrives carrying tracking parameters, which
+    get dropped here - carefully, because YouTube's ?v= is a query parameter
+    too and dropping the whole query string would break it.
     """
     # Zero-width and byte-order-mark characters some apps sneak in.
     for junk in ("﻿", "​", "‌", "‍", "⁠"):
         text = text.replace(junk, "")
-    return text.strip().strip('"').strip("'").strip()
+    text = text.strip().strip('"').strip("'").strip()
+
+    if "?" not in text:
+        return text
+
+    parsed = urlsplit(text)
+    kept = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+            if k.lower() not in JUNK_PARAMS]
+    return urlunsplit(parsed._replace(query=urlencode(kept), fragment=""))
 
 
 def pick_folder(url):
