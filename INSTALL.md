@@ -85,21 +85,42 @@ found, go back to step 1.
 Back on `chrome://extensions`, click **Reload** on the extension's card. Then
 click the puzzle-piece icon in Chrome's toolbar and pin the blue arrow.
 
+Chrome will ask about **reading cookies** for Instagram, Facebook, YouTube,
+TikTok, X and Reddit. That permission is what lets it download posts that need
+you to be logged in. The cookies go to the helper on your own machine for the
+length of one download and are deleted afterwards; nothing is sent anywhere.
+Decline it if you only ever download public videos — everything else still works.
+
 Done.
 
 ---
 
 ## Using it
 
-- **On a video's own page** (a YouTube watch page, a Short, a Reel you've
-  opened) — click the blue arrow in the toolbar.
-- **In a feed**, where the page isn't the video — right-click the video or its
-  link and choose **Download this video**.
-- **Click again while it's downloading to cancel.** What's downloaded so far is
-  kept, so starting the same video again resumes instead of restarting.
+- **On a post's own page** (a YouTube watch page, a Short, a Reel or a
+  multi-picture post you've opened) — click the blue arrow in the toolbar.
+- **In a feed**, where the page isn't the post — right-click the picture, video
+  or link and choose **Download this**.
+- **Queue as many as you like.** Every click adds one to the queue and returns
+  straight away, so you can go tab to tab clicking download without waiting.
+  They run one at a time, in the order you clicked.
+- **To cancel**, right-click the toolbar icon: **Cancel current download** stops
+  the one running and moves on to the next; **Clear the whole queue** drops
+  everything.
 
-The icon shows `…`, then a percentage, then a green `✓`. A notification gives
-you the filename.
+The badge counts what's left to go. Hover the icon to see the percentage and
+what it's currently doing. A notification names each file as it lands.
+
+Left-click never cancels — with several tabs to get through, a click that
+sometimes means "stop" is a click you can't make quickly.
+
+### The folder Claude can read
+
+Alongside the video or pictures, each download writes a folder under
+`Videos\Posts` holding `post.md` (the caption, who posted it, when), the
+pictures shrunk down, a few stills from any video, and a transcript if a Groq
+key is set up. That folder is meant to be handed to an AI — it costs roughly
+half what the same post would as a PDF. The README explains why.
 
 ## Where the files go
 

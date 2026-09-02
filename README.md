@@ -1,11 +1,20 @@
 # media-download
 
-A Chrome button that saves the video you're looking at as an `.mp4`, sorted into
-folders under your `Videos` directory. Instagram Reels, YouTube Shorts, regular
-YouTube videos, TikToks.
+A Chrome button that saves whatever you're looking at, sorted into folders under
+your `Videos` directory. Instagram Reels and multi-picture posts, YouTube Shorts
+and videos, TikToks, Facebook Reels.
 
-Click the toolbar icon on a video's page, or right-click a link in a feed. That's
+Click the toolbar icon on a post's page, or right-click a link in a feed. That's
 it — no terminal, no pasting URLs.
+
+Two things it does that a plain downloader doesn't:
+
+- **It queues.** Click download on one tab, switch to the next, click again.
+  Links pile up and get worked through one at a time; nothing waits for anything.
+  The badge counts what's left.
+- **It writes a copy an AI can read.** Alongside the media, every download
+  produces a folder with `post.md` (caption, author, date), the pictures shrunk
+  to 1024px, stills from any video, and a transcript. See *Bundles*, below.
 
 > **Windows only.** Built and tested on Windows 11 with Chrome.
 
@@ -33,12 +42,40 @@ is written so you can hand it to an AI assistant and have it walk you through.
 
 | | |
 |---|---|
-| **On a video's own page** | Click the blue arrow in the toolbar |
-| **In a feed** (page isn't the video) | Right-click the video or link → **Download this video** |
-| **While it's downloading** | Click again to cancel — progress is kept, so restarting resumes |
+| **On a post's own page** | Click the blue arrow in the toolbar |
+| **In a feed** (page isn't the post) | Right-click the picture or link → **Download this** |
+| **Queue several** | Just keep clicking. Every click adds one; they run in order |
+| **Cancel the one running** | Right-click the toolbar icon → **Cancel current download** |
+| **Drop everything queued** | Right-click the toolbar icon → **Clear the whole queue** |
 
-The icon shows `…`, then a percentage, then a green `✓`. A notification gives you
-the filename.
+The badge shows how many are left to go. Hover the icon for the percentage and
+what it's currently doing. A notification names each file as it lands.
+
+Left-click never cancels. With eight tabs to get through, a click that sometimes
+means "stop" is a click you can't make quickly.
+
+## Bundles — the copy an AI can read
+
+Every download also writes a folder under `Videos\Posts`, named
+`site - author - id`:
+
+```
+Videos\Posts\instagram - someone - Cxyz123\
+    post.md          caption, author, date, link — read this first
+    01.jpg 02.jpg …  the pictures, in swipe order, 1024px on the long edge
+    frame-01.jpg …   five stills, if there was a video
+    transcript.txt   what was said, if there was audio
+```
+
+**Why not a PDF.** What an AI pays to look at a picture depends only on its pixel
+count — about `width × height / 750` tokens — and not on the file format. A PDF
+page costs *more* than a plain image, because each page is both rendered to an
+image and scraped for text. A ten-picture carousel is roughly 9,000 tokens as a
+folder of shrunk JPEGs against roughly 20,000 as a PDF, and the folder is easier
+to point at one picture inside.
+
+Transcripts need a free Groq API key. Without one everything else still works and
+the transcript is simply absent — see *Requirements*.
 
 ## Where files go
 
@@ -80,8 +117,27 @@ also means it can only reach videos you could see while logged out.
 ## Requirements
 
 - Windows, Google Chrome (Edge and Brave work — see the note in INSTALL.md)
-- [ffmpeg](https://ffmpeg.org/) — joins the separate video and audio streams
+- [ffmpeg](https://ffmpeg.org/) — joins the separate video and audio streams,
+  and cuts the stills
 - Python is **not** required to use it; only to develop it
+
+**Optional — transcripts.** Get a free key at
+[console.groq.com/keys](https://console.groq.com/keys), then run once:
+
+```powershell
+setx GROQ_API_KEY "gsk_your_key_here"
+```
+
+Open a new terminal afterwards. Without a key, every download still works and
+`transcript.txt` is simply not written — a missing transcript never fails a
+download.
+
+**Logged-in content.** Instagram carousels and Facebook Reels usually need a
+session. The extension reads your own Chrome cookies for the site and hands them
+to the helper for the duration of one download; they are written to a temporary
+file which is deleted immediately afterwards, and they never leave the machine.
+Chrome can stay open — this is why it doesn't use yt-dlp's
+`cookiesfrombrowser`, which requires closing it.
 
 ---
 
@@ -104,9 +160,11 @@ python download.py "https://www.youtube.com/watch?v=..."   # or one and done
 
 | Path | What it is |
 |---|---|
-| `download.py` | All the download logic — folder sorting, format selection, ffmpeg discovery |
+| `download.py` | Works out what a link is, then fetches it — folder sorting, format selection |
+| `bundle.py` | Builds the AI-readable folder — shrinking, stills, `post.md` |
+| `transcribe.py` | Optional, free audio → text via Groq Whisper |
 | `chrome-extension/` | The button. `background.js` is the whole extension |
-| `native-host/host.py` | Bridges Chrome's native-messaging protocol to `download.py` |
+| `native-host/host.py` | Bridges Chrome's native messaging to `download.py`, and holds the queue |
 | `native-host/install.ps1` | Registers the host with Chrome |
 | `native-host/make-release.py` | Builds the shareable zip |
 

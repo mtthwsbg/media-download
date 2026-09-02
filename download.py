@@ -1,8 +1,17 @@
 """
-download.py - paste a video link, get an MP4.
+download.py - paste a link, get the media, plus a folder Claude can read.
 
-Works with Instagram Reels, YouTube Shorts, and regular YouTube videos.
-Videos are sorted into folders automatically based on the kind of link.
+Handles three shapes of link:
+
+  * a single video      - Reels, Shorts, YouTube, TikTok -> an .mp4
+  * a multi-picture post - the Instagram ones with dots along the bottom
+                           -> a folder of numbered .jpg files
+  * anything in between  - a post that mixes pictures and clips
+
+Every download also gets a bundle: a folder holding post.md (the caption and
+who wrote it), the pictures shrunk down, a few stills from any video, and a
+transcript if a Groq key is set up. That bundle is the part Claude reads - see
+bundle.py for why it isn't a PDF.
 
 Usage:
     python download.py            -> interactive; paste links one at a time
@@ -11,13 +20,18 @@ Usage:
 
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+import bundle
+import transcribe
+from bundle import find_ffmpeg  # noqa: F401 - re-exported; install docs mention it
+
 # ---------------------------------------------------------------
-#  WHERE VIDEOS GET SAVED
+#  WHERE THINGS GET SAVED
 #  If you rename a folder in Explorer, change it here too.
 # ---------------------------------------------------------------
 VIDEOS = Path.home() / "Videos"
@@ -41,6 +55,31 @@ MAX_HEIGHT = 1080
 # difference between one slow stream and a full pipe. 8 is safe; much higher
 # and sites start refusing connections.
 PARALLEL_PIECES = 8
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
+VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
+
+
+class Cancelled(Exception):
+    """The caller asked for this download to stop."""
+
+
+class Result:
+    """What a finished download produced."""
+
+    def __init__(self, kind, media=None, folder=None, title=""):
+        self.kind = kind        # "video" or "post"
+        self.media = media      # the .mp4, for a video
+        self.folder = folder    # the bundle folder Claude reads
+        self.title = title
+
+    @property
+    def path(self):
+        """The one path worth showing in a notification."""
+        return self.media or self.folder
+
+    def __str__(self):
+        return str(self.path)
 
 
 def clean_link(text):
@@ -71,36 +110,77 @@ def pick_folder(url):
     return OTHER
 
 
-def find_ffmpeg():
-    """
-    Find ffmpeg, the tool that stitches video and audio together.
+def _base_options(cookiefile=None):
+    """The yt-dlp settings shared by looking and downloading."""
+    options = {
+        "socket_timeout": 15,
+        "retries": 3,
+        "no_warnings": True,
+        "quiet": True,
+        "noprogress": True,
+    }
+    if cookiefile:
+        # Being logged in is what makes Instagram and Facebook work at all.
+        # The extension hands us a cookie file; see background.js.
+        options["cookiefile"] = str(cookiefile)
 
-    Returns the folder holding ffmpeg.exe, or None to let yt-dlp look on its own.
-    Normally ffmpeg is on your PATH and there is nothing to do, but a terminal
-    that was already open when ffmpeg was installed won't know about it yet.
-    In that case we check where winget puts it. The glob ("*") is there so a
-    future ffmpeg update, which changes the version number in the path, still works.
+    ffmpeg = find_ffmpeg()
+    if ffmpeg:
+        options["ffmpeg_location"] = str(ffmpeg)
+    return options
+
+
+def probe(url, cookiefile=None):
     """
-    if shutil.which("ffmpeg"):
+    Ask what's behind a link without downloading it.
+
+    Returns yt-dlp's info dict, or None if yt-dlp can't see anything - which is
+    the normal answer for a post that is only pictures, and the signal to hand
+    the link to gallery-dl instead.
+
+    noplaylist is deliberately NOT set here. A multi-picture Instagram post is a
+    playlist as far as yt-dlp is concerned, so switching playlists off is what
+    used to make a ten-picture post arrive as one picture.
+    """
+    options = dict(_base_options(cookiefile), extract_flat=False, skip_download=True)
+    try:
+        with YoutubeDL(options) as ydl:
+            return ydl.extract_info(url, download=False)
+    except DownloadError:
+        return None
+    except Exception:
         return None
 
-    packages = Path.home() / "AppData" / "Local" / "Microsoft" / "WinGet" / "Packages"
-    for exe in packages.glob("Gyan.FFmpeg*/ffmpeg-*/bin/ffmpeg.exe"):
-        return exe.parent
-    return None
+
+def is_multi(info):
+    """True if this link is a post with several pieces of media in it."""
+    entries = (info or {}).get("entries")
+    if not entries:
+        return False
+    return len(list(entries)) > 1
 
 
-def download(url, extra_options=None):
+def has_video(info):
+    """True if yt-dlp found an actual video stream to fetch."""
+    if not info:
+        return False
+    if info.get("entries"):
+        return False
+    return bool(info.get("formats") or info.get("url"))
+
+
+def download(url, extra_options=None, cookiefile=None):
     """
-    Download a single link. Returns the saved file path.
+    Download a single video. Returns the saved file path.
 
     extra_options is for callers that need to tweak yt-dlp without copying the
-    settings below - the Chrome extension uses it to attach a progress hook.
+    settings below - host.py uses it to attach a progress hook.
     """
     folder = pick_folder(url)
     folder.mkdir(parents=True, exist_ok=True)  # make the folder if it isn't there yet
 
-    options = {
+    options = dict(_base_options(cookiefile))
+    options.update({
         # Prefer H.264 video + AAC audio: the combination that plays in every
         # player and video editor. Falls back to whatever exists if that's
         # not offered, so a download never fails just over codec choice.
@@ -113,47 +193,185 @@ def download(url, extra_options=None):
         ),
         # Pull the pieces of the video in parallel instead of one after another.
         "concurrent_fragment_downloads": PARALLEL_PIECES,
-        # Don't sit forever on a connection that has gone quiet; retry instead.
-        "socket_timeout": 15,
-        "retries": 3,
         # Stitch the video and audio into a single .mp4 (this is what ffmpeg does).
         "merge_output_format": "mp4",
         # Filename pattern -> "Creator - Title [id].mp4"
         "outtmpl": str(folder / "%(uploader)s - %(title).80s [%(id)s].%(ext)s"),
-        # If a link happens to sit inside a playlist, grab only that one video.
+        # A single video that happens to sit in a playlist: grab only that video.
+        # Multi-picture posts never reach here - fetch() sends them elsewhere.
         "noplaylist": True,
-        "no_warnings": True,
-        # Uncomment the line below to reach posts that require being logged in
-        # (private accounts you follow, age-restricted videos). It reads the
-        # login cookies out of your Chrome profile. Close Chrome first.
-        # "cookiesfrombrowser": ("chrome",),
-    }
-
-    # Point yt-dlp at ffmpeg if it isn't already on PATH.
-    ffmpeg = find_ffmpeg()
-    if ffmpeg:
-        options["ffmpeg_location"] = str(ffmpeg)
+    })
 
     # Applied last so a caller can override anything above.
     if extra_options:
         options.update(extra_options)
 
-    print(f"\nSaving into: {folder}")
     with YoutubeDL(options) as ydl:
         info = ydl.extract_info(url, download=True)
 
     # yt-dlp records the final path here after any merging is done.
     finished = info.get("requested_downloads") or []
     if finished and finished[0].get("filepath"):
-        return Path(finished[0]["filepath"])
-    return folder
+        return Path(finished[0]["filepath"]), info
+    return folder, info
+
+
+def gallery_fetch(url, into, cookiefile=None):
+    """
+    Download every picture and clip in a post, using gallery-dl.
+
+    yt-dlp is a video tool and treats a picture as a video with no formats.
+    gallery-dl is the one built for posts, so multi-picture Instagram posts and
+    the image half of a mixed post go through here.
+
+    Returns the files it wrote, in the order you'd swipe through them.
+    """
+    from gallery_dl import config as gconfig, job as gjob
+
+    gconfig.clear()
+    gconfig.set((), "base-directory", str(into))
+    # An empty directory list means "put the files straight in base-directory"
+    # rather than gallery-dl's usual site/user/ tree.
+    gconfig.set((), "directory", [])
+    gconfig.set((), "skip", True)
+    if cookiefile:
+        gconfig.set((), "cookies", str(cookiefile))
+
+    # Order is the whole game here - it's the order you'd swipe through the
+    # post - and the filenames gallery-dl picks don't reliably carry it. So
+    # record the order the files actually arrive in. Renaming them to 01, 02...
+    # happens later, in bundle.save_images().
+    arrived = []
+
+    class OrderedDownload(gjob.DownloadJob):
+        def handle_url(self, url, keywords):
+            super().handle_url(url, keywords)
+            path = getattr(getattr(self, "pathfmt", None), "path", None)
+            if path:
+                arrived.append(Path(path))
+
+    OrderedDownload(url).run()
+
+    on_disk = {p for p in Path(into).iterdir() if p.is_file()}
+    # Anything the hook caught, in arrival order, then anything it missed.
+    ordered = [p for p in arrived if p in on_disk]
+    return ordered + sorted(on_disk - set(ordered))
+
+
+def gallery_metadata(url, cookiefile=None):
+    """Caption, author and id for a post, without downloading anything."""
+    from gallery_dl import config as gconfig, job as gjob
+
+    gconfig.clear()
+    if cookiefile:
+        gconfig.set((), "cookies", str(cookiefile))
+
+    collector = gjob.DataJob(url)
+    collector.run()
+
+    for record in collector.data:
+        # DataJob yields (type, url, keywords) triples; the keywords carry the post.
+        if isinstance(record, (list, tuple)) and len(record) >= 3 and isinstance(record[-1], dict):
+            keywords = record[-1]
+            return {
+                "id": str(keywords.get("post_shortcode") or keywords.get("id") or ""),
+                "uploader": keywords.get("username") or keywords.get("owner") or "",
+                "description": keywords.get("description") or keywords.get("content") or "",
+                "extractor_key": keywords.get("category") or "",
+                "webpage_url": url,
+                "upload_date": str(keywords.get("date") or "")[:10].replace("-", ""),
+            }
+    return {}
+
+
+def _post_bundle(url, info, cookiefile, on_status=None):
+    """Download a multi-picture post and turn it into a readable folder."""
+    if not info or not info.get("id"):
+        info = {**(info or {}), **gallery_metadata(url, cookiefile)}
+    info.setdefault("webpage_url", url)
+
+    dest = bundle.post_dir(info)
+
+    with tempfile.TemporaryDirectory(prefix="mediadl-") as staging:
+        if on_status:
+            on_status("fetching post")
+        grabbed = gallery_fetch(url, staging, cookiefile)
+
+        images = [p for p in grabbed if p.suffix.lower() in IMAGE_SUFFIXES]
+        clips = [p for p in grabbed if p.suffix.lower() in VIDEO_SUFFIXES]
+
+        if on_status:
+            on_status("shrinking")
+        saved_images = bundle.save_images(images, dest)
+
+        # A post can mix pictures and clips. Keep the clips whole next to the
+        # pictures, and pull stills out of them so they aren't invisible.
+        frames = []
+        kept = None
+        for index, clip in enumerate(clips, start=1):
+            kept = dest / f"video-{index:02d}{clip.suffix.lower()}"
+            shutil.copy2(clip, kept)
+            frames += bundle.keyframes(kept, dest)
+
+    transcript = None
+    if kept:
+        if on_status:
+            on_status("transcribing")
+        transcript = transcribe.transcribe_video(kept, dest)
+
+    bundle.write_post_md(info, dest, images=saved_images, frames=frames,
+                         transcript=transcript, media=kept)
+
+    if not saved_images and not clips:
+        raise DownloadError(f"Nothing downloadable was found at {url}")
+
+    return Result("post", media=None, folder=dest, title=info.get("title") or dest.name)
+
+
+def _video_bundle(url, info, cookiefile, extra_options, on_status=None):
+    """Download a video, then write the readable folder beside it."""
+    saved, full = download(url, extra_options, cookiefile)
+    info = full or info or {}
+
+    dest = bundle.post_dir(info)
+
+    if on_status:
+        on_status("stills")
+    frames = bundle.keyframes(saved, dest) if saved.is_file() else []
+
+    if on_status:
+        on_status("transcribing")
+    transcript = transcribe.transcribe_video(saved, dest) if saved.is_file() else None
+
+    bundle.write_post_md(info, dest, frames=frames, transcript=transcript, media=saved)
+
+    return Result("video", media=saved, folder=dest, title=info.get("title") or saved.name)
+
+
+def fetch(url, cookiefile=None, extra_options=None, on_status=None):
+    """
+    The one entry point. Works out what the link is and does the right thing.
+
+    Returns a Result. Raises DownloadError like yt-dlp does, so callers that
+    already handle that keep working.
+    """
+    info = probe(url, cookiefile)
+
+    if has_video(info):
+        return _video_bundle(url, info, cookiefile, extra_options, on_status)
+
+    # Either several pieces of media, or nothing yt-dlp recognises as video -
+    # both of which mean pictures are involved.
+    return _post_bundle(url, info, cookiefile, on_status)
 
 
 def try_download(url):
-    """Run download() but never crash - print the problem and carry on."""
+    """Run fetch() but never crash - print the problem and carry on."""
     try:
-        saved = download(url)
-        print(f"Done: {saved}")
+        result = fetch(url, on_status=lambda note: print(f"  {note}..."))
+        print(f"Done: {result.path}")
+        if result.folder and result.folder != result.path:
+            print(f"  Readable copy: {result.folder}")
         return True
     except DownloadError as err:
         print(f"\nCouldn't download that link.\n  {err}")
@@ -181,7 +399,7 @@ def main():
         return
 
     # No links given: ask for them one at a time.
-    print("Paste a video link and press Enter.")
+    print("Paste a link and press Enter.")
     print("Press Enter on an empty line to quit.")
     while True:
         try:

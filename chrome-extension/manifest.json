@@ -1,19 +1,20 @@
 {
   "manifest_version": 3,
-  "name": "Video Downloader",
-  "version": "1.0.0",
-  "description": "Send the video link you're looking at to download.py and save it straight to your Videos folder.",
+  "name": "Media Downloader",
+  "version": "2.0.0",
+  "description": "Queue up links from any tab and save them, plus a folder Claude can read.",
   "permissions": [
     "nativeMessaging",
     "contextMenus",
     "notifications",
-    "activeTab"
+    "activeTab",
+    "cookies"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Download this video",
+    "default_title": "Download this",
     "default_icon": {
       "16": "icon16.png",
       "48": "icon48.png",
@@ -25,5 +26,14 @@
     "48": "icon48.png",
     "128": "icon128.png"
   },
+  "host_permissions": [
+    "*://*.instagram.com/*",
+    "*://*.facebook.com/*",
+    "*://*.youtube.com/*",
+    "*://*.tiktok.com/*",
+    "*://*.x.com/*",
+    "*://*.twitter.com/*",
+    "*://*.reddit.com/*"
+  ],
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0RUE8iVgUihYqsfANNvOfAl1JIbjlnNrPMSEFOg7S1tr8CbuRbB0KRUCNUBWNnbUsQvHG3uvB1zQrxQf4QA6wc/K4q8eJx52PCM4tEB+oqJH1mPxLeqWIFvXLQQSd8QsF5UJW2CUWQ/CGUKki/20Nkf0w8g/si+k637iirZwBdK+Z5lBu/vL2+iVpH54dpxnEW/tP6INWLaRUGiwHyox/G5WoJj+wpTy7P57kQmiFcsUcHJRLCMdxS5JbfubYmWlGVp1aKiMKon0lsmWc/RkIKVdQ1Ub4hfgo5M6nRGzVnPnJE619Ux+vJ5x+6ty5wciDB39I0IEZE4JdxHOxAndMQIDAQAB"
 }
