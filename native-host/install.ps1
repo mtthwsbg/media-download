@@ -11,10 +11,13 @@
 #   -ExtensionId <id>   override the ID (only needed if manifest.json's "key"
 #                       has been removed, which makes the ID folder-dependent)
 #   -InstallFfmpeg      also install ffmpeg via winget if it is missing
+#   -Source             run host.py from this folder instead of the frozen
+#                       host.exe, so edits to the Python take effect on reload
 
 param(
     [string]$ExtensionId = "",
-    [switch]$InstallFfmpeg
+    [switch]$InstallFfmpeg,
+    [switch]$Source
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,11 +46,18 @@ if ($id -notmatch '^[a-p]{32}$') {
 
 # --- find the program Chrome should run --------------------------------------
 # Shared build first, then a freshly built one, then the source checkout.
-$candidates = @(
-    (Join-Path $here "host\host.exe"),
-    (Join-Path $here "dist\host\host.exe"),
-    (Join-Path $here "host.bat")
-)
+# -Source points Chrome at host.bat, which runs host.py straight from this
+# folder. Use it while developing: without it Chrome runs the frozen host.exe,
+# and every edit to the Python is invisible until it is rebuilt.
+if ($Source) {
+    $candidates = @( (Join-Path $here "host.bat") )
+} else {
+    $candidates = @(
+        (Join-Path $here "host\host.exe"),
+        (Join-Path $here "dist\host\host.exe"),
+        (Join-Path $here "host.bat")
+    )
+}
 
 $target = $null
 foreach ($candidate in $candidates) {

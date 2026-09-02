@@ -259,9 +259,11 @@ def handle(message):
         return
     except DownloadError as err:
         # A cancel mid-download surfaces as our Cancelled wrapped by yt-dlp.
-        if isinstance(err.__cause__, Cancelled) or isinstance(
-            getattr(err, "exc_info", (None,))[1], Cancelled
-        ):
+        # exc_info is None on a DownloadError we raised ourselves rather than
+        # one yt-dlp raised, so it has to be defaulted before it is indexed -
+        # getattr's default doesn't help when the attribute exists and is None.
+        wrapped = (getattr(err, "exc_info", None) or (None, None, None))[1]
+        if isinstance(err.__cause__, Cancelled) or isinstance(wrapped, Cancelled):
             log("cancelled")
             send({"status": "cancelled", "id": item_id})
             return
@@ -331,7 +333,22 @@ def main():
         # A cancel applies to the item that was running when it was clicked,
         # not to the one that comes next.
         cancel_current.clear()
-        handle(item)
+
+        # One bad link must never take the rest of the queue with it. handle()
+        # already reports every failure it can name; this is the backstop for
+        # the ones it can't, and it is the difference between losing one
+        # download and losing eight.
+        try:
+            handle(item)
+        except Closed:
+            raise
+        except Exception as err:  # noqa: BLE001
+            log(f"item crashed: {type(err).__name__}: {err}")
+            try:
+                send({"status": "error", "id": item.get("id"),
+                      "message": f"{type(err).__name__}: {err}"})
+            except Closed:
+                raise
 
 
 if __name__ == "__main__":

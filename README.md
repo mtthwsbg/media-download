@@ -170,17 +170,22 @@ python download.py "https://www.youtube.com/watch?v=..."   # or one and done
 
 ### Building a release
 
+One command, from `native-host`:
+
 ```powershell
-cd native-host
-
-# 1. freeze host.py + download.py + yt-dlp into host.exe
-..\.venv\Scripts\python.exe -m PyInstaller --name host --onedir --console `
-    --noconfirm --paths .. --hidden-import download `
-    --collect-submodules yt_dlp host.py
-
-# 2. assemble the zip
 ..\.venv\Scripts\python.exe make-release.py
 ```
+
+It freezes `host.exe` from `host.spec`, checks that the frozen build actually
+starts, and writes `Desktop\video-downloader.zip`. Add `--no-build` to package
+an existing build without freezing it again.
+
+**`host.spec` is the file that matters.** PyInstaller finds imports by reading
+code, and almost nothing here is reachable that way: `download`, `bundle` and
+`transcribe` are imported from the project root, and both yt-dlp and gallery-dl
+choose a site's extractor at runtime by name. Anything missing from the spec
+fails only in the shared build, only on the site whose extractor didn't come
+along — which is why the build runs the exe before packaging it.
 
 `--onedir`, not `--onefile`: a one-file exe unpacks itself on **every** run, which
 adds seconds to every single click.
@@ -188,10 +193,20 @@ adds seconds to every single click.
 `make-release.py` refuses to build if the private key, a machine-specific host
 manifest, or a log file would end up in the archive.
 
-**Rebuild after editing `download.py` or `host.py`** — the exe is a frozen
-snapshot. `install.ps1` prefers `host.exe` and falls back to `host.bat` (which
-runs live source from the venv), so deleting `dist\` switches you back to
-developing against source.
+### Developing against source, not the frozen build
+
+The exe is a snapshot, so while Chrome points at it **every edit to the Python
+is invisible**. That failure looks exactly like a broken change. Point Chrome at
+the source instead:
+
+```powershell
+cd native-host
+powershell -ExecutionPolicy Bypass -File install.ps1 -Source
+```
+
+That writes the host manifest against `host.bat`, which runs `host.py` from the
+venv, so a reload of the extension picks up every edit. Re-run `install.ps1`
+without `-Source` to go back to the frozen build.
 
 ### The extension ID is fixed
 

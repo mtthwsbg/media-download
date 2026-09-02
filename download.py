@@ -18,6 +18,7 @@ Usage:
     python download.py <link>     -> download that one link and exit
 """
 
+import io
 import shutil
 import sys
 import tempfile
@@ -28,7 +29,7 @@ from yt_dlp.utils import DownloadError
 
 import bundle
 import transcribe
-from bundle import find_ffmpeg  # noqa: F401 - re-exported; install docs mention it
+from bundle import find_ffmpeg
 
 # ---------------------------------------------------------------
 #  WHERE THINGS GET SAVED
@@ -60,26 +61,18 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".webm", ".mkv", ".m4v"}
 
 
-class Cancelled(Exception):
-    """The caller asked for this download to stop."""
-
-
 class Result:
     """What a finished download produced."""
 
-    def __init__(self, kind, media=None, folder=None, title=""):
+    def __init__(self, kind, media=None, folder=None):
         self.kind = kind        # "video" or "post"
         self.media = media      # the .mp4, for a video
         self.folder = folder    # the bundle folder Claude reads
-        self.title = title
 
     @property
     def path(self):
         """The one path worth showing in a notification."""
         return self.media or self.folder
-
-    def __str__(self):
-        return str(self.path)
 
 
 def clean_link(text):
@@ -150,14 +143,6 @@ def probe(url, cookiefile=None):
         return None
     except Exception:
         return None
-
-
-def is_multi(info):
-    """True if this link is a post with several pieces of media in it."""
-    entries = (info or {}).get("entries")
-    if not entries:
-        return False
-    return len(list(entries)) > 1
 
 
 def has_video(info):
@@ -266,7 +251,10 @@ def gallery_metadata(url, cookiefile=None):
     if cookiefile:
         gconfig.set((), "cookies", str(cookiefile))
 
-    collector = gjob.DataJob(url)
+    # DataJob's whole purpose is printing JSON to stdout. We want the data, not
+    # the printing - and in the Chrome helper anything on stdout corrupts the
+    # pipe, so this is a correctness fix and not just tidiness.
+    collector = gjob.DataJob(url, file=io.StringIO())
     collector.run()
 
     for record in collector.data:
@@ -325,7 +313,7 @@ def _post_bundle(url, info, cookiefile, on_status=None):
     if not saved_images and not clips:
         raise DownloadError(f"Nothing downloadable was found at {url}")
 
-    return Result("post", media=None, folder=dest, title=info.get("title") or dest.name)
+    return Result("post", media=None, folder=dest)
 
 
 def _video_bundle(url, info, cookiefile, extra_options, on_status=None):
@@ -345,7 +333,7 @@ def _video_bundle(url, info, cookiefile, extra_options, on_status=None):
 
     bundle.write_post_md(info, dest, frames=frames, transcript=transcript, media=saved)
 
-    return Result("video", media=saved, folder=dest, title=info.get("title") or saved.name)
+    return Result("video", media=saved, folder=dest)
 
 
 def fetch(url, cookiefile=None, extra_options=None, on_status=None):

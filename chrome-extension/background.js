@@ -182,7 +182,7 @@ async function enqueue(url) {
 
   const cookies = await cookiesFor(url);
 
-  if (!open_()) return;
+  if (!openPipe()) return;
 
   const id = nextId++;
   outstanding.set(id, { url: url, percent: -1, stage: "" });
@@ -202,7 +202,7 @@ async function enqueue(url) {
   }
 }
 
-function open_() {
+function openPipe() {
   if (port) return true;
 
   try {
@@ -228,7 +228,7 @@ function speak(message) {
   }
 }
 
-function close_() {
+function closePipe() {
   if (!port) return;
   const going = port;
   port = null;
@@ -245,7 +245,7 @@ function resetWatchdog() {
   watchdog = setTimeout(() => {
     const stuck = outstanding.size;
     outstanding.clear();
-    close_();
+    closePipe();
     render();
     if (stuck) {
       notify("Download stopped responding", stuck + " item(s) were dropped.");
@@ -258,7 +258,7 @@ function finish(id) {
   render();
   // Nothing left to do means nothing should be running: closing the pipe is
   // what makes Chrome kill the helper process.
-  if (outstanding.size === 0) close_();
+  if (outstanding.size === 0) closePipe();
 }
 
 function onMessage(msg) {

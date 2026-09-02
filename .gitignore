@@ -8,5 +8,4 @@ native-host/build/
 native-host/dist/
 native-host/release/
 native-host/build.log
-native-host/host.spec
 *.pem

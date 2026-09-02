@@ -1,11 +1,12 @@
 r"""
 make-release.py - builds the zip you hand to somebody else.
 
-Assumes host.exe has already been built:
+One command, from this folder:
 
-    ..\.venv\Scripts\python.exe -m PyInstaller --name host --onedir --console \
-        --noconfirm --paths .. --hidden-import download --collect-submodules yt_dlp host.py
     ..\.venv\Scripts\python.exe make-release.py
+
+It freezes host.exe from host.spec and then packages it. Pass --no-build to
+skip the freeze and reuse whatever is already in dist\host.
 
 Produces Desktop\video-downloader.zip containing:
 
@@ -18,6 +19,7 @@ Produces Desktop\video-downloader.zip containing:
 """
 
 import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -26,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 BUILT_HOST = HERE / "dist" / "host"
 EXTENSION = PROJECT / "chrome-extension"
+SPEC = HERE / "host.spec"
 
 STAGING = HERE / "release" / "video-downloader"
 ZIP_PATH = Path.home() / "Desktop" / "video-downloader.zip"
@@ -46,10 +49,53 @@ def check(condition, message):
         sys.exit(1)
 
 
+def build():
+    """
+    Freeze host.exe from host.spec.
+
+    The spec is the part that matters: it names the modules PyInstaller can't
+    find by reading the code, which is most of them here. Building from the
+    spec rather than a command line means the shared build can never quietly
+    miss an extractor that the source version has.
+    """
+    print("Freezing host.exe (a couple of minutes)...")
+    result = subprocess.run(
+        [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", str(SPEC)],
+        cwd=HERE,
+    )
+    check(result.returncode == 0, "PyInstaller failed - see the output above")
+
+
+def smoke_test():
+    """
+    Prove the frozen build can actually import what it needs.
+
+    A missing hidden import doesn't show up until the exe runs, and by then it
+    is in somebody else's hands. Running it with a closed pipe makes it start
+    up, import everything, find nothing to do and exit - which is exactly the
+    part that breaks.
+    """
+    exe = BUILT_HOST / "host.exe"
+    result = subprocess.run([str(exe)], input=b"", capture_output=True, timeout=120)
+    log = HERE / "host.log"
+    problem = ""
+    if log.exists():
+        tail = log.read_text(encoding="utf-8", errors="replace").strip().splitlines()[-3:]
+        problem = " | ".join(line for line in tail if "crash" in line.lower())
+    check(result.returncode == 0 and not problem,
+          f"the frozen host.exe won't start: {problem or result.stderr[:300]}")
+    print("host.exe starts and imports cleanly")
+
+
 def main():
+    if "--no-build" not in sys.argv:
+        build()
+
     check(BUILT_HOST.is_dir(), f"{BUILT_HOST} not found - build host.exe first (see the docstring)")
     check((BUILT_HOST / "host.exe").is_file(), "host.exe missing from the build output")
     check(EXTENSION.is_dir(), f"{EXTENSION} not found")
+
+    smoke_test()
 
     # The extension must carry its "key", or every friend gets a different
     # extension ID and the ID baked into install.ps1 stops matching.
