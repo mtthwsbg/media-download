@@ -23,7 +23,7 @@ Two things it does that a plain downloader doesn't:
 ## Install
 
 **[→ Download the latest release](../../releases/latest)** (`video-downloader.zip`,
-~19 MB), then follow **[INSTALL.md](INSTALL.md)**.
+~32 MB), then follow **[INSTALL.md](INSTALL.md)**.
 
 Five steps, about three minutes:
 
