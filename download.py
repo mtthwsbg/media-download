@@ -19,6 +19,7 @@ Usage:
 """
 
 import io
+import logging
 import re
 import shutil
 import sys
@@ -556,6 +557,10 @@ ERROR_KINDS = (
         "private", "not authorized", "account is private", "age-restricted",
         "age restricted", "confirm your age", "cookies", "authentication",
         "you must be logged", "members-only", "subscriber",
+        # gallery-dl's way of saying it was bounced to a login form. Without
+        # these, a picture post that needs an account was classed "no_media"
+        # and the panel never offered the login - a dead end no click escaped.
+        "redirect to login", "login page", "accounts/login",
     )),
     ("rate_limited", (
         "429", "too many requests", "rate limit", "rate-limit",
@@ -616,6 +621,20 @@ def classify(error, url=""):
     return "failed", _describe(error)
 
 
+def _gallery_problem(notes):
+    """
+    The one line worth showing from what gallery-dl logged, or None.
+
+    Only the first is used: the rest are usually the same refusal repeated per
+    retry, and a person reading the panel needs one sentence, not four.
+    """
+    for note in notes or ():
+        text = str(note).strip()
+        if text:
+            return DownloadError(text)
+    return None
+
+
 def _probe_failure(url, error):
     """The message for a link nothing could read."""
     return (
@@ -625,7 +644,29 @@ def _probe_failure(url, error):
     )
 
 
-def gallery_fetch(url, into, cookiefile=None, should_stop=None):
+class _CatchLog(logging.Handler):
+    """
+    Collect what gallery-dl complains about while it runs.
+
+    gallery-dl reports a refusal by logging it and returning nothing - it does
+    not raise. Without this the only error left in hand is yt-dlp's, which for
+    a picture post says "no video formats", which is not a failure at all: it
+    is the reason we called gallery-dl in the first place. Reporting it is how
+    "you need to be logged in" came out as "there's nothing downloadable".
+    """
+
+    def __init__(self, into):
+        super().__init__(level=logging.WARNING)
+        self.into = into
+
+    def emit(self, record):
+        try:
+            self.into.append(record.getMessage())
+        except Exception:  # noqa: BLE001 - a broken log line must not fail a download
+            pass
+
+
+def gallery_fetch(url, into, cookiefile=None, should_stop=None, notes=None):
     """
     Download every picture and clip in ONE post, using gallery-dl.
 
@@ -691,10 +732,19 @@ def gallery_fetch(url, into, cookiefile=None, should_stop=None):
             if path:
                 arrived.append(Path(path))
 
+    # gallery-dl names its loggers after the extractor ("instagram"), not
+    # under one parent we could attach to, so the handler goes on the root and
+    # comes off again immediately. Downloads run one at a time, so this window
+    # belongs to this download.
+    catcher = _CatchLog(notes if notes is not None else [])
+    root = logging.getLogger()
+    root.addHandler(catcher)
     try:
         OneItemOnly(url).run()
     except _DifferentPost:
         pass  # everything on disk belongs to the post that was asked for
+    finally:
+        root.removeHandler(catcher)
 
     on_disk = {p for p in Path(into).iterdir() if p.is_file()}
     # Anything the hook caught, in arrival order, then anything it missed.
@@ -751,12 +801,15 @@ def _post_bundle(url, info, cookiefile, on_status=None, probe_error=None,
     with tempfile.TemporaryDirectory(prefix="mediadl-") as staging:
         if on_status:
             on_status("fetching post")
+        notes = []
         try:
-            grabbed = gallery_fetch(url, staging, cookiefile, should_stop)
+            grabbed = gallery_fetch(url, staging, cookiefile, should_stop, notes)
         except _DifferentPost:
             raise
         except Exception as err:  # noqa: BLE001
-            raise DownloadError(_probe_failure(url, probe_error or err)) from err
+            raise DownloadError(
+                _probe_failure(url, _gallery_problem(notes) or probe_error or err)
+            ) from err
 
         images = [p for p in grabbed if p.suffix.lower() in IMAGE_SUFFIXES]
         clips = [p for p in grabbed if p.suffix.lower() in VIDEO_SUFFIXES]
@@ -765,10 +818,13 @@ def _post_bundle(url, info, cookiefile, on_status=None, probe_error=None,
         # containing only a post.md about a download that failed is exactly
         # the litter this whole change is meant to stop.
         if not images and not clips:
-            # If yt-dlp had already said something specific, that is the
-            # useful sentence - "nothing was found" describes the symptom,
-            # "Requested post not available" describes the cause.
-            raise DownloadError(_probe_failure(url, probe_error))
+            # gallery-dl's own complaint first: it is the tool that was meant
+            # to handle this link, so its refusal is the cause. yt-dlp's
+            # message is the fallback, and only says something useful when it
+            # is not just "no video formats" - see _gallery_problem.
+            raise DownloadError(
+                _probe_failure(url, _gallery_problem(notes) or probe_error)
+            )
 
         # Created here, not earlier: only once there is something to write.
         dest = bundle.post_dir(pick_folder(url, "post"), info, url)
