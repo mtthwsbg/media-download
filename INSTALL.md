@@ -7,6 +7,13 @@ folders under your `Videos` directory.
 below. It's five steps and takes about three minutes. Nothing here needs admin
 rights, and nothing runs in the background.**
 
+**If a terminal makes you nervous, you don't have to do this alone.** Open
+Claude (or whichever AI assistant you use), point it at this folder, and ask it
+to read **[FOR-YOUR-AI.md](FOR-YOUR-AI.md)** — that file is written for the
+assistant, and walks it through helping you one step at a time. It knows which
+two steps it cannot do for you, so it will hand those back rather than pretend.
+
+
 ---
 
 ## What this is

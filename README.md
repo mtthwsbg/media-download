@@ -35,8 +35,14 @@ Five steps, about three minutes:
 
 You don't need Python — it's bundled inside `host.exe`.
 
-**[INSTALL.md](INSTALL.md) has the full version**, including troubleshooting, and
-is written so you can hand it to an AI assistant and have it walk you through.
+**[INSTALL.md](INSTALL.md) has the full version**, including troubleshooting.
+
+Not comfortable in a terminal? **[FOR-YOUR-AI.md](FOR-YOUR-AI.md)** ships in the
+zip too. Point Claude at the folder and ask it to read that file: it is written
+for the assistant rather than for you, and is explicit that loading the
+extension and pinning it are yours to click — an assistant cannot reach inside
+Chrome's settings, and one that claims otherwise sends you hunting for a button
+nobody pressed.
 
 ## Using it
 

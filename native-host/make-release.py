@@ -12,6 +12,7 @@ Produces Desktop\video-downloader.zip containing:
 
     video-downloader\
         INSTALL.md
+        FOR-YOUR-AI.md
         install.ps1
         uninstall.ps1
         extension\      <- loaded via chrome://extensions
@@ -114,6 +115,10 @@ def main():
     shutil.copy2(HERE / "install.ps1", STAGING / "install.ps1")
     shutil.copy2(HERE / "uninstall.ps1", STAGING / "uninstall.ps1")
     shutil.copy2(PROJECT / "INSTALL.md", STAGING / "INSTALL.md")
+    # Shipped beside INSTALL.md, not instead of it: whoever can follow
+    # INSTALL.md does not need this, and whoever cannot needs it inside the
+    # zip rather than in a repo they were never going to open.
+    shutil.copy2(PROJECT / "FOR-YOUR-AI.md", STAGING / "FOR-YOUR-AI.md")
 
     # Belt and braces: the ignore filter above should have caught these, but a
     # leaked private key is not a mistake worth risking on one code path.
