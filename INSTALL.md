@@ -85,11 +85,17 @@ found, go back to step 1.
 Back on `chrome://extensions`, click **Reload** on the extension's card. Then
 click the puzzle-piece icon in Chrome's toolbar and pin the blue arrow.
 
-Chrome will ask about **reading cookies** for Instagram, Facebook, YouTube,
-TikTok, X and Reddit. That permission is what lets it download posts that need
-you to be logged in. The cookies go to the helper on your own machine for the
-length of one download and are deleted afterwards; nothing is sent anywhere.
-Decline it if you only ever download public videos — everything else still works.
+Chrome will ask about **reading cookies** for the sites it supports. That
+permission is what lets it download posts that need you to be logged in. The
+cookies go to the helper on your own machine for the length of one download and
+are deleted afterwards; nothing is sent anywhere. Decline it if you only ever
+download public videos — everything else still works.
+
+**Nothing of your login is used until you say so.** Every download is first
+tried signed-out. If one fails because it genuinely needed an account, the panel
+offers a **Use my <site> login** button; press it and only then is your existing
+browser session used, for that site, remembered until you remove it from the
+list at the bottom of the panel.
 
 Done.
 
@@ -97,45 +103,78 @@ Done.
 
 ## Using it
 
-- **On a post's own page** (a YouTube watch page, a Short, a Reel or a
-  multi-picture post you've opened) — click the blue arrow in the toolbar.
-- **In a feed**, where the page isn't the post — right-click the picture, video
-  or link and choose **Download this**.
-- **Queue as many as you like.** Every click adds one to the queue and returns
-  straight away, so you can go tab to tab clicking download without waiting.
-  They run one at a time, in the order you clicked.
-- **To cancel**, right-click the toolbar icon: **Cancel current download** stops
-  the one running and moves on to the next; **Clear the whole queue** drops
-  everything.
+Click the toolbar icon to open the panel.
 
-The badge counts what's left to go. Hover the icon to see the percentage and
-what it's currently doing. A notification names each file as it lands.
+- **Download what's on screen** — the button at the top. It works on a post's
+  own page and in a feed: it reads the page to see which post you're actually
+  looking at.
+- **If it can't tell**, it says so rather than guessing. Right-click the post
+  and choose **Download this** — that always works, on any site.
+- **Queue as many as you like.** Each one is added and the panel returns
+  straight away; they run one at a time, in order.
+- **The panel lists everything** that is downloading, with a progress bar and a
+  percentage, and everything recently finished.
+- **To stop one**, press the **✕** on its row. To stop everything, right-click
+  the toolbar icon and choose **Stop everything**. Either takes effect
+  immediately.
 
-Left-click never cancels — with several tabs to get through, a click that
-sometimes means "stop" is a click you can't make quickly.
+The badge on the icon counts what is left, so you can tell work is happening
+without opening the panel.
 
 ### The folder Claude can read
 
-Alongside the video or pictures, each download writes a folder under
-`Videos\Posts` holding `post.md` (the caption, who posted it, when), the
-pictures shrunk down, a few stills from any video, and a transcript if a Groq
-key is set up. That folder is meant to be handed to an AI — it costs roughly
-half what the same post would as a PDF. The README explains why.
+A video is saved as just the video file. A **picture post** has no single file
+to open, so it becomes a folder holding `post.md` (the caption, who posted it,
+when), the pictures shrunk down, and — if the post also had a clip — a few
+stills and a transcript, when a Groq key is set up. That folder is meant to be
+handed to an AI: it costs roughly half what the same post would as a PDF. The
+README explains why.
 
 ## Where the files go
 
-Under your own `Videos` folder, sorted by where the link came from:
+Everything goes under **one** folder in your own `Videos`, so it is obvious what
+put it there and you can move or delete the lot in one go. Inside it, files are
+sorted by the site they came from and then by what kind of thing they are.
+`install.ps1` creates the whole tree, so you can see where things will land
+before you download anything. Paths in the table are relative to it.
+
+```
+Videos\Chrome Downloader Ext\
+  Instagram\   Reels    Posts   Stories
+  YouTube\     Videos   Shorts
+  TikTok\      Videos   Photos
+  Reddit\      Videos   Posts
+  Facebook\    Reels    Videos  Posts
+  X\           Videos   Posts
+  ...and Snapchat, Bluesky, Twitch, Vimeo, Dailymotion, Streamable,
+     Rumble, Kick, Bilibili, VK, Weibo, LinkedIn, 9GAG, Newgrounds,
+     Pinterest, Imgur, Flickr, DeviantArt, ArtStation, Pixiv, Tumblr,
+     Tenor, SoundCloud, Bandcamp
+  Other\      any site not in the list - it still downloads
+```
 
 | Link | Lands in |
 |---|---|
-| `instagram.com/...` | `Videos\IG Reels` |
-| `tiktok.com/...` | `Videos\TikToks` |
-| `youtube.com/shorts/...` | `Videos\YT Shorts` |
-| `youtube.com/watch?v=...` or `youtu.be/...` | `Videos\YT Videos` |
-| anything else | `Videos\Other` |
+| `instagram.com/reel/...` | `Instagram\Reels` |
+| `instagram.com/p/...` | `Instagram\Posts` |
+| `youtube.com/shorts/...` | `YouTube\Shorts` |
+| `youtube.com/watch?v=...` or `youtu.be/...` | `YouTube\Videos` |
+| `tiktok.com/@user/video/...` | `TikTok\Videos` |
+| `reddit.com/r/.../comments/...` | `Reddit\...` |
+| `facebook.com/reel/...` | `Facebook\Reels` |
+| `x.com/user/status/...` | `X\...` |
+| anything else | `Other` |
 
 Named `Creator - Title [id].mp4`. Downloads are capped at 1080p — 4K is about
 ten times the size for something you'll watch on a laptop.
+
+### One click gets one thing
+
+A profile, a playlist, a subreddit or your feed is a link to *many* posts, and
+downloading all of them is not what the button is for. Those links are refused
+with a note telling you to open the post itself, or right-click it and choose
+**Download this**. A `&list=` picked up from an open playlist is stripped, so
+you get the one video you were watching.
 
 ---
 
@@ -150,9 +189,21 @@ Step 4 didn't run, or the folder moved since it did. Re-run `install.ps1`.
 **Downloads fail with an ffmpeg error**
 ffmpeg isn't installed or isn't on PATH. Step 1, then open a new terminal.
 
-**"This video is unavailable" / "login required"**
-The video isn't publicly viewable. This tool only reaches things you could see
-while logged out — it deliberately doesn't touch your cookies or your accounts.
+**"Needs your <site> login"**
+The post isn't public. Press the **Use my <site> login** button on that row in
+the panel and it will retry using the session already in your browser. Make
+sure you are actually signed in to that site in Chrome first.
+
+**"<site> is busy right now"**
+The site is rate-limiting - refusing requests for a while. Reddit does this
+readily. Wait a minute and try again; if it keeps happening, giving that site
+your login usually settles it.
+
+**"Couldn't tell which post is on screen"**
+On a feed the button reads the page to work out which post you're looking at.
+If the post hasn't finished loading, or the site changed its layout, it says
+this instead of guessing and downloading the wrong video. Right-click the post
+and choose **Download this** — that always works.
 
 **It stopped working on a site that used to work**
 Instagram and YouTube change constantly and yt-dlp gets patched to keep up. This

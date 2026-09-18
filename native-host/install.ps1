@@ -137,11 +137,38 @@ if ($written -ne $jsonPath) {
     exit 1
 }
 
+# --- make the folders, so it's obvious where downloads will land -------------
+# Everything this tool writes lives under one folder in Videos. Creating the
+# tree up front means a new user can see where things go before the first
+# download, instead of wondering whether it worked.
+$root = Join-Path ([Environment]::GetFolderPath("MyVideos")) "Chrome Downloader Ext"
+$tree = @(
+    "Instagram\Reels", "Instagram\Posts", "Instagram\Stories",
+    "YouTube\Videos", "YouTube\Shorts", "TikTok\Videos",
+    "TikTok\Photos", "Facebook\Reels", "Facebook\Videos",
+    "Facebook\Posts", "X\Videos", "X\Posts",
+    "Reddit\Videos", "Reddit\Posts", "Snapchat\Spotlight",
+    "Bluesky\Posts", "Twitch\Clips", "Twitch\Videos",
+    "Vimeo\Videos", "Dailymotion\Videos", "Streamable\Videos",
+    "Rumble\Videos", "Kick\Videos", "Bilibili\Videos",
+    "VK\Videos", "Weibo\Posts", "LinkedIn\Videos",
+    "9GAG\Videos", "Newgrounds\Art", "Pinterest\Images",
+    "Imgur\Images", "Flickr\Images", "DeviantArt\Art",
+    "ArtStation\Art", "Pixiv\Art", "Tumblr\Posts",
+    "Tenor\Images", "SoundCloud\Audio", "Bandcamp\Audio",
+    "Other"
+)
+foreach ($branch in $tree) {
+    $path = Join-Path $root $branch
+    if (-not (Test-Path $path)) { New-Item -ItemType Directory -Path $path -Force | Out-Null }
+}
+
 Write-Host ""
 Write-Host "Installed." -ForegroundColor Green
 Write-Host "  extension : $id"
 Write-Host "  manifest  : $jsonPath"
 Write-Host "  runs      : $target"
 if ($ffmpeg) { Write-Host "  ffmpeg    : found" }
+Write-Host "  saves to  : $root"
 Write-Host ""
 Write-Host "Now go to chrome://extensions and click Reload on the extension."

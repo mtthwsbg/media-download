@@ -22,7 +22,9 @@ import json
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PIL import Image
 
@@ -37,7 +39,9 @@ JPEG_QUALITY = 85
 # few enough that the transcript stays the main event.
 KEYFRAME_COUNT = 5
 
-POSTS = Path.home() / "Videos" / "Posts"
+# Where a post folder goes is not decided here any more. It is the platform
+# folder the link belongs to - see pick_folder() in download.py - so a post
+# and a video from the same site end up in the same place.
 
 
 def find_ffmpeg():
@@ -93,17 +97,50 @@ def safe(text, limit=60):
     return text[:limit] or "unknown"
 
 
-def post_dir(info):
+def url_ident(url):
     """
-    Where a post's readable bundle lives: one folder per post.
+    The post's own id, read straight out of its link.
 
-    Named site - author - id, so two posts by the same person never collide and
-    the folder is recognisable in Explorer without opening it.
+    instagram.com/p/ABC123 -> ABC123, tiktok /video/755... -> 755...,
+    reddit /r/x/comments/abc/title -> abc.
     """
-    site = safe(info.get("extractor_key") or info.get("extractor") or "web", 20).lower()
-    author = safe(info.get("uploader") or info.get("uploader_id") or "unknown", 40)
-    ident = safe(info.get("id") or "post", 30)
-    folder = POSTS / f"{site} - {author} - {ident}"
+    parts = [p for p in urlsplit(url or "").path.split("/") if p]
+    if not parts:
+        return ""
+    for marker in ("p", "reel", "reels", "tv", "video", "photo", "status",
+                   "shorts", "comments", "s"):
+        if marker in parts:
+            after = parts.index(marker) + 1
+            if after < len(parts):
+                return parts[after]
+    return parts[-1]
+
+
+def post_dir(parent, info, url=""):
+    """
+    Where a post's readable bundle lives: one folder per post, inside the
+    platform folder its parent argument names.
+
+    Named "author - id", so two posts by the same person never collide and the
+    folder is recognisable in Explorer without opening it.
+
+    The id comes from the LINK first and the metadata second. A post URL always
+    carries its own shortcode, while the metadata sometimes comes back empty -
+    and when it did, the name fell back to literal "unknown - post", so every
+    such post landed in one shared folder and overwrote the pictures of the one
+    before it. A timestamp is the last resort for the same reason: two
+    different posts must never be handed the same folder.
+    """
+    author = safe(info.get("uploader") or info.get("uploader_id") or "", 40)
+    ident = safe(url_ident(url) or info.get("id") or "", 30)
+    if ident == "unknown":  # safe() says "unknown" when it is given nothing
+        ident = time.strftime("%Y%m%d-%H%M%S")
+
+    # The id alone is enough when nobody's name came back - "unknown - DcQwB"
+    # just reads as clutter.
+    name = ident if author == "unknown" else f"{author} - {ident}"
+
+    folder = parent / name
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

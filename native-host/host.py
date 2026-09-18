@@ -56,7 +56,7 @@ sys.stdout = sys.stderr
 # build download.py is packed inside the bundle and is already importable.
 if not FROZEN:
     sys.path.insert(0, str(PROJECT))
-from download import clean_link, fetch  # noqa: E402
+from download import classify, clean_link, fetch, migrate_folders  # noqa: E402
 from yt_dlp.utils import DownloadError  # noqa: E402
 
 
@@ -74,6 +74,20 @@ def log(text):
 
 class Cancelled(Exception):
     """This download was told to stop - by the user, or by Chrome hanging up."""
+
+
+# Two deadlines, because "slow" and "stuck" look identical from outside and
+# need opposite answers.
+#
+# A big video legitimately takes minutes, so once bytes are actually moving we
+# wait a long time. But a link that has produced NO sign of life - no
+# progress, no stage - is a link going nowhere. Reddit is the case that proved
+# it: it answers "403 Blocked" in a tenth of a second, and yt-dlp then works
+# through fallback after fallback for a hundred seconds. No retry setting
+# bounds that, because it isn't retrying - it's trying different things. Only
+# the caller can put a limit on it.
+QUIET_DEADLINE_SECONDS = 45      # nothing has happened at all
+ITEM_DEADLINE_SECONDS = 1800     # something is happening, just slowly
 
 
 class Closed(Exception):
@@ -148,8 +162,24 @@ def reader_thread():
 
         command = message.get("cmd")
         if command == "cancel":
-            log("cancel: current item")
-            cancel_current.set()
+            # A cancel can name one item. The panel has a cross per row, so
+            # "cancel" no longer only means "whatever is running".
+            wanted = message.get("id")
+            with queue_lock:
+                still_queued = [q for q in pending if q.get("id") == wanted]
+                for queued in still_queued:
+                    pending.remove(queued)
+            if still_queued:
+                # It never started, so nothing has to be interrupted - and the
+                # answer can go back immediately.
+                log(f"cancel: queued item {wanted} removed")
+                try:
+                    send({"status": "cancelled", "id": wanted})
+                except Closed:
+                    pass
+            else:
+                log(f"cancel: current item ({wanted})")
+                cancel_current.set()
         elif command == "clear":
             with queue_lock:
                 dropped = len(pending)
@@ -197,17 +227,42 @@ def tidy_error(err):
         text = text[:start] + text[end + 1:]
     if len(text) > 250:
         text = text[:250] + "..."
-    return text or "Unknown error."
+    # An empty message is how a real failure once reached the user as the word
+    # "None" and told them nothing. Never send one.
+    if not text or text == "None":
+        return "The download failed and gave no reason. Check host.log."
+    return text
 
 
-def handle(message):
-    """Do one item off the queue, and tell Chrome how it went."""
+def handle(message, reported=None, beat=None):
+    """
+    Do one item off the queue, and tell Chrome how it went.
+
+    `reported` is a threading.Event shared with the main loop. Once it is set,
+    this item has already been answered - because the user cancelled and the
+    main loop said so without waiting for us. Everything that would speak to
+    Chrome checks it first, so an abandoned download can never announce itself
+    afterwards and put a finished row back on a queue the user emptied.
+    """
+    if reported is None:
+        reported = threading.Event()
+    if beat is None:
+        beat = [time.monotonic()]
+
+    def answer(payload):
+        """Send exactly one final word about this item, and only if nobody has."""
+        if reported.is_set():
+            return
+        reported.set()
+        send(payload)
+
     item_id = message.get("id")
     url = clean_link(str(message.get("url", "")))
     log(f"request: {url}")
 
     if not url:
-        send({"status": "error", "id": item_id, "message": "No link was sent."})
+        answer({"status": "error", "id": item_id, "kind": "failed",
+                "message": "No link was sent."})
         return
 
     cookies = cookie_file(message.get("cookies"))
@@ -234,12 +289,16 @@ def handle(message):
         percent = int((state.get("downloaded_bytes") or 0) * 100 / total)
         if percent != last_percent[0]:
             last_percent[0] = percent
-            send({"status": "progress", "id": item_id, "percent": percent})
+            beat[0] = time.monotonic()
+            if not reported.is_set():
+                send({"status": "progress", "id": item_id, "percent": percent})
 
     def on_status(note):
         """Stages that aren't a percentage - shrinking pictures, transcribing."""
         check_cancel()
-        send({"status": "stage", "id": item_id, "stage": note})
+        beat[0] = time.monotonic()
+        if not reported.is_set():
+            send({"status": "stage", "id": item_id, "stage": note})
 
     try:
         result = fetch(
@@ -252,10 +311,14 @@ def handle(message):
                 "noprogress": True,
             },
             on_status=on_status,
+            # Checked during extraction and inside gallery-dl too, not just
+            # while bytes are moving. A link stuck resolving used to be
+            # uncancellable, which is what made cancel look broken.
+            should_stop=check_cancel,
         )
     except Cancelled:
         log("cancelled")
-        send({"status": "cancelled", "id": item_id})
+        answer({"status": "cancelled", "id": item_id})
         return
     except DownloadError as err:
         # A cancel mid-download surfaces as our Cancelled wrapped by yt-dlp.
@@ -265,15 +328,22 @@ def handle(message):
         wrapped = (getattr(err, "exc_info", None) or (None, None, None))[1]
         if isinstance(err.__cause__, Cancelled) or isinstance(wrapped, Cancelled):
             log("cancelled")
-            send({"status": "cancelled", "id": item_id})
+            answer({"status": "cancelled", "id": item_id})
             return
-        log(f"failed: {err}")
-        send({"status": "error", "id": item_id, "message": tidy_error(err)})
+        kind, sentence = classify(err, url)
+        log(f"failed ({kind}): {err}")
+        answer({"status": "error", "id": item_id, "kind": kind,
+                "message": sentence or tidy_error(err),
+                "site": message.get("site") or ""})
         return
     except Exception as err:  # noqa: BLE001 - a crash must still reach the user
         log(f"crashed: {type(err).__name__}: {err}")
-        send({"status": "error", "id": item_id,
-              "message": f"{type(err).__name__}: {err}"})
+        kind, sentence = classify(err, url)
+        detail = sentence or tidy_error(err)
+        if detail.startswith("The download failed and gave no reason"):
+            detail = type(err).__name__
+        answer({"status": "error", "id": item_id, "kind": kind,
+                "message": detail})
         return
     finally:
         if cookies:
@@ -284,7 +354,7 @@ def handle(message):
 
     saved = Path(str(result.path))
     log(f"saved: {saved}")
-    send({
+    answer({
         "status": "done",
         "id": item_id,
         "kind": result.kind,
@@ -311,6 +381,15 @@ def heartbeat_thread():
 
 
 def main():
+    # An older version wrote straight into Videos. Tidy that away once, before
+    # anything can save into the new place and leave the tree half-migrated.
+    try:
+        moved = migrate_folders()
+        if moved:
+            log(f"moved into the master folder: {', '.join(moved)}")
+    except Exception as err:  # noqa: BLE001 - never block downloading over this
+        log(f"folder migration skipped: {type(err).__name__}: {err}")
+
     watcher = threading.Thread(target=reader_thread, daemon=True)
     watcher.start()
     threading.Thread(target=heartbeat_thread, daemon=True).start()
@@ -334,21 +413,72 @@ def main():
         # not to the one that comes next.
         cancel_current.clear()
 
-        # One bad link must never take the rest of the queue with it. handle()
-        # already reports every failure it can name; this is the backstop for
-        # the ones it can't, and it is the difference between losing one
-        # download and losing eight.
-        try:
-            handle(item)
-        except Closed:
-            raise
-        except Exception as err:  # noqa: BLE001
-            log(f"item crashed: {type(err).__name__}: {err}")
+        # The item runs on its own thread so the main loop stays free to
+        # answer a cancel. Waiting for a blocked download to notice a flag is
+        # exactly what made cancel feel broken: a link stuck retrying a 429
+        # reaches no checkpoint for minutes. Answering here instead makes
+        # cancel instant no matter where the worker is stuck.
+        reported = threading.Event()
+        beat = [time.monotonic()]   # last time the worker showed any sign of life
+        worker = threading.Thread(
+            target=_run_item, args=(item, reported, beat), daemon=True
+        )
+        worker.start()
+
+        started = time.monotonic()
+        while worker.is_alive():
+            worker.join(0.2)
+            if not worker.is_alive():
+                break
+
+            if cancel_current.is_set() and not reported.is_set():
+                # Say so now and move on. The worker is a daemon, and
+                # `reported` guarantees it can never write a finished row for
+                # an item the user already stopped.
+                reported.set()
+                log(f"cancelled item {item.get('id')} (worker abandoned)")
+                send({"status": "cancelled", "id": item.get("id")})
+                break
+
+            if pipe_closed.is_set():
+                return
+
+            now = time.monotonic()
+            quiet = now - beat[0] > QUIET_DEADLINE_SECONDS
+            overall = now - started > ITEM_DEADLINE_SECONDS
+            if quiet or overall:
+                if not reported.is_set():
+                    reported.set()
+                    log(f"gave up on item {item.get('id')} "
+                        f"({'no sign of life' if quiet else 'overall deadline'})")
+                    send({"status": "error", "id": item.get("id"),
+                          "kind": "rate_limited" if quiet else "failed",
+                          "message": ("This site isn't responding - it may be "
+                                      "blocking downloads. Try again in a "
+                                      "minute, or use your login for it.")
+                                     if quiet else
+                                     "This one took too long and was stopped."})
+                # Stop the abandoned worker too, so it isn't still using the
+                # network while the next item runs.
+                cancel_current.set()
+                break
+
+
+def _run_item(item, reported, beat):
+    """One queued item, on its own thread. Never lets an exception escape."""
+    try:
+        handle(item, reported, beat)
+    except Closed:
+        pipe_closed.set()
+    except Exception as err:  # noqa: BLE001
+        log(f"item crashed: {type(err).__name__}: {err}")
+        if not reported.is_set():
+            reported.set()
             try:
-                send({"status": "error", "id": item.get("id"),
+                send({"status": "error", "id": item.get("id"), "kind": "failed",
                       "message": f"{type(err).__name__}: {err}"})
             except Closed:
-                raise
+                pipe_closed.set()
 
 
 if __name__ == "__main__":

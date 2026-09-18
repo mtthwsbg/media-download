@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <button id="grab" class="grab">
+    <span class="grab-arrow">&#11015;</span>
+    <span>Download what&rsquo;s on screen</span>
+  </button>
+
+  <p id="hint" class="hint" hidden></p>
+
+  <section id="running-block" hidden>
+    <h2 id="running-title">Downloading</h2>
+    <ul id="running" class="rows"></ul>
+  </section>
+
+  <section id="finished-block" hidden>
+    <h2>Finished</h2>
+    <ul id="finished" class="rows"></ul>
+    <button id="clear" class="quiet">Clear finished</button>
+  </section>
+
+  <p id="empty" class="empty">
+    Nothing downloading yet.<br>
+    Open a post, or scroll to one in a feed, and press the button above.
+    <br><br>
+    You can also right-click any post and choose <b>Download this</b>.
+  </p>
+
+  <section id="logins-block" class="logins" hidden>
+    <h2>Using your login</h2>
+    <ul id="logins" class="rows"></ul>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

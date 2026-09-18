@@ -1,0 +1,211 @@
+/* One accent, system fonts, no icon set to load. The panel has to be
+   readable at a glance by someone who has never seen it before. */
+
+:root {
+  --accent: #3b7ddd;
+  --bg: #ffffff;
+  --fg: #1c1e21;
+  --muted: #6b7076;
+  --line: #e6e8eb;
+  --track: #eef0f3;
+  --ok: #2e9e4f;
+  --bad: #c0392b;
+  --hover: #f4f6f8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1f2124;
+    --fg: #e8eaed;
+    --muted: #9aa0a6;
+    --line: #34373b;
+    --track: #2c2f33;
+    --hover: #292c30;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 340px;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* --- the main action ---------------------------------------------------- */
+
+.grab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grab:hover { filter: brightness(1.07); }
+.grab:active { transform: translateY(1px); }
+.grab[disabled] { opacity: .6; cursor: default; }
+.grab-arrow { font-size: 15px; line-height: 1; }
+
+.hint {
+  margin: 10px 2px 0;
+  color: var(--bad);
+  font-size: 12px;
+}
+
+/* --- sections ----------------------------------------------------------- */
+
+h2 {
+  margin: 18px 2px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.rows { margin: 0; padding: 0; list-style: none; }
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 7px;
+}
+
+.row + .row { margin-top: 2px; }
+.row:hover { background: var(--hover); }
+
+.who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site { color: var(--muted); }
+.site::after { content: " · "; }
+
+/* --- progress ----------------------------------------------------------- */
+
+.bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.track {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width .25s ease;
+}
+
+/* A download that hasn't reported a percentage yet: a stripe that moves, so
+   "starting" never looks the same as "stuck". */
+.fill.waiting {
+  width: 35%;
+  background: linear-gradient(90deg, var(--track), var(--accent), var(--track));
+  animation: slide 1.3s linear infinite;
+}
+
+@keyframes slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(300%); }
+}
+
+.pct {
+  min-width: 34px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.note { grid-column: 1 / -1; margin-top: 3px; color: var(--muted); font-size: 12px; }
+.note.bad { color: var(--bad); }
+
+/* --- buttons ------------------------------------------------------------ */
+
+.x {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.x:hover { background: var(--track); color: var(--fg); }
+
+.mark { font-size: 13px; }
+.mark.ok { color: var(--ok); }
+.mark.bad { color: var(--bad); }
+
+.login {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login:hover { background: var(--accent); color: #fff; }
+
+.quiet {
+  display: block;
+  margin: 8px 0 0 auto;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.quiet:hover { background: var(--track); color: var(--fg); }
+
+.empty {
+  margin: 22px 6px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* --- the sites allowed to use your login -------------------------------- */
+
+.logins { border-top: 1px solid var(--line); margin-top: 16px; }
+.logins .row { padding: 5px 8px; font-size: 12px; }
+.logins .row:hover { background: none; }

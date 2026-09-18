@@ -40,30 +40,56 @@ is written so you can hand it to an AI assistant and have it walk you through.
 
 ## Using it
 
+Click the toolbar icon and a panel opens:
+
+```
+┌─────────────────────────────┐
+│  ⬇ Download what's on screen │
+├─────────────────────────────┤
+│ Downloading (2)             │
+│                             │
+│ ▸ TikTok · nimrashamid   ✕  │
+│   ███████████░░░░░  68%     │
+│                             │
+│ ▸ YouTube · JayMech      ✕  │
+│   starting…                 │
+├─────────────────────────────┤
+│ ✓ Instagram · Brody         │
+│ ✗ Reddit · busy right now   │
+│              Clear finished │
+└─────────────────────────────┘
+```
+
 | | |
 |---|---|
-| **On a post's own page** | Click the blue arrow in the toolbar |
-| **In a feed** (page isn't the post) | Right-click the picture or link → **Download this** |
-| **Queue several** | Just keep clicking. Every click adds one; they run in order |
-| **Cancel the one running** | Right-click the toolbar icon → **Cancel current download** |
-| **Drop everything queued** | Right-click the toolbar icon → **Clear the whole queue** |
+| **Download what you're looking at** | Open the panel → **Download what's on screen** |
+| **In a feed** | Same button — it works out which post is on screen |
+| **When it can't tell** | Right-click the post → **Download this** |
+| **Queue several** | Keep going. They run one at a time, in order |
+| **Stop one** | The **✕** on its row |
+| **Stop everything** | Right-click the toolbar icon → **Stop everything** |
 
-The badge shows how many are left to go. Hover the icon for the percentage and
-what it's currently doing. A notification names each file as it lands.
+Cancelling takes effect immediately, whatever the download is doing — including
+a link that is stuck waiting on a site that isn't answering.
 
-Left-click never cancels. With eight tabs to get through, a click that sometimes
-means "stop" is a click you can't make quickly.
+The badge on the icon counts what's left, so you can see there's work in
+progress without opening the panel.
 
 ## Bundles — the copy an AI can read
 
-Every download also writes a folder under `Videos\Posts`, named
-`site - author - id`:
+A **video** is saved as just the video file. There is nothing to explain about
+an `.mp4` that the `.mp4` doesn't already contain, and writing a folder of
+stills beside every one of them only made the Videos folder harder to look at.
+
+A **picture post** has no single file to open, so it becomes a folder, named
+`author - id` inside its platform's `Posts` folder:
 
 ```
-Videos\Posts\instagram - someone - Cxyz123\
+Videos\Chrome Downloader Ext\Instagram\Posts\someone - Cxyz123\
     post.md          caption, author, date, link — read this first
     01.jpg 02.jpg …  the pictures, in swipe order, 1024px on the long edge
-    frame-01.jpg …   five stills, if there was a video
+    video-01.mp4     any clip the post also contained, kept whole
+    frame-01.jpg …   five stills from that clip
     transcript.txt   what was said, if there was audio
 ```
 
@@ -79,18 +105,76 @@ the transcript is simply absent — see *Requirements*.
 
 ## Where files go
 
-Sorted by where the link came from, under your own `Videos` folder:
+Everything lives under **one** folder in your own `Videos`, so it is obvious
+what put it there and you can move or delete the lot in one go. Inside it,
+files are sorted by the site they came from and then by what kind of thing
+they are:
+
+```
+Videos\Chrome Downloader Ext\
+  Instagram\   Reels    Posts   Stories
+  YouTube\     Videos   Shorts
+  TikTok\      Videos   Photos
+  Reddit\      Videos   Posts
+  Facebook\    Reels    Videos  Posts
+  X\           Videos   Posts
+  Snapchat\    Spotlight        Bluesky\    Posts
+  Twitch\      Clips    Videos  Vimeo\      Videos
+  Pinterest\   Images           Imgur\      Images
+  SoundCloud\  Audio            Bandcamp\   Audio
+  ...and Dailymotion, Streamable, Rumble, Kick, Bilibili, VK, Weibo,
+     LinkedIn, 9GAG, Newgrounds, Flickr, DeviantArt, ArtStation,
+     Pixiv, Tumblr, Tenor
+  Other\       anything else
+```
+
+**It will try any site**, not only the ones above. The list is about *naming* —
+those get a tidy folder and a sensible split inside it. A site nobody has taught
+it about still downloads; it just lands in `Other`.
+
+**Threads is the one deliberate gap.** Neither of the two downloaders underneath
+has a Threads extractor, so there is nothing to hook up. Better an honest gap
+than a menu entry that always fails.
+
+`install.ps1` creates the whole tree up front, so you can see where things will
+land before the first download. If you used an earlier version that wrote
+straight into `Videos\`, those folders are moved inside the master folder the
+next time the helper starts — merged, never overwritten. `Screen Recordings` is
+left alone, because it was never ours.
+
+Paths in the table below are all relative to `Videos\Chrome Downloader Ext\`.
 
 | Link | Lands in |
 |---|---|
-| `instagram.com/...` | `Videos\IG Reels` |
-| `tiktok.com/...` (also `vm.` / `vt.`) | `Videos\TikToks` |
-| `youtube.com/shorts/...` | `Videos\YT Shorts` |
-| `youtube.com/watch?v=...` or `youtu.be/...` | `Videos\YT Videos` |
-| anything else | `Videos\Other` |
+| `instagram.com/reel/...` | `Instagram\Reels` |
+| `instagram.com/p/...` | `Instagram\Posts` |
+| `youtube.com/shorts/...` | `YouTube\Shorts` |
+| `youtube.com/watch?v=...` or `youtu.be/...` | `YouTube\Videos` |
+| `tiktok.com/@user/video/...` (also `vm.` / `vt.`) | `TikTok\Videos` |
+| `tiktok.com/@user/photo/...` | `TikTok\Photos` |
+| `reddit.com/r/.../comments/...` | `Reddit\Videos` or `\Posts` |
+| `facebook.com/reel/...`, `/videos/...`, `/posts/...` | `Facebook\...` |
+| `x.com/user/status/...` | `X\Videos` or `\Posts` |
+| anything else | `Other` |
 
-Named `Creator - Title [id].mp4` — the id keeps two videos with the same title
-from overwriting each other.
+Where the link itself says what it is — `/reel/`, `/shorts/` — that wins.
+Otherwise a video goes in the site's video folder and pictures go in its post
+folder. Files are named `Creator - Title [id].mp4`; the id keeps two videos
+with the same title from overwriting each other.
+
+## One click, one download
+
+A profile page, a playlist, a subreddit or your own feed is a link to *many*
+posts. Handing one to the downloader means downloading all of them, which is
+how a folder fills up with things you never asked for. So those links are
+refused, with a note saying to open the post itself or right-click it:
+
+> That link is a profile, feed or playlist — not one post.
+
+A link copied while a playlist is open carries `&list=` along with it. That is
+stripped, so `watch?v=abc&list=PL123` downloads the one video `abc` rather than
+the whole list. And if a listing somehow gets through anyway, the downloader
+stops as soon as a file arrives belonging to a second post.
 
 Capped at 1080p by default, since 4K is roughly ten times the bytes for something
 you'll watch on a laptop. Change `MAX_HEIGHT` in `download.py` if you want 4K.
@@ -110,9 +194,62 @@ extension may talk to this program". Chrome starts the helper when you click and
 kills it when the download ends — **nothing runs in the background**, and no
 admin rights are needed.
 
-The extension asks for four permissions and no host permissions, so it cannot
-read the pages you visit. It never touches your cookies or your accounts, which
-also means it can only reach videos you could see while logged out.
+The extension runs only on the sites it lists, and only when you click it. On a
+feed it reads that page to work out which post is on screen — see below — and
+nothing about the page is stored or sent anywhere.
+
+## Your login
+
+Most posts are public and download without you being signed in to anything. Some
+aren't: a private Instagram account, a Reddit that has decided it doesn't like
+being asked.
+
+**Nothing of your login is used until you say so.** The first attempt is always
+made signed-out. If that fails *because* it needed an account, the panel says so
+and offers a button:
+
+> ✗ Instagram · somebody
+> Needs your Instagram login.
+> **[ Use my Instagram login ]**
+
+Press it and that download is retried using the session already in your browser.
+The answer is remembered for **that site only**, and the sites you've said yes to
+are listed at the bottom of the panel with an ✕ to take it back. Nothing is ever
+sent anywhere: it goes to the helper on your own machine, in a temporary file
+deleted straight afterwards.
+
+## When a site says no
+
+Sites rate-limit. Reddit in particular will refuse a run of requests and then
+keep refusing for a minute or two. When that happens you get:
+
+> ✗ Reddit · Reddit is busy right now - try again in a minute.
+
+...in about twenty seconds, rather than a download that appears to hang. If a
+site keeps doing it, that is usually the one worth giving your login to.
+
+## Which post did you mean?
+
+TikTok, Instagram and YouTube are single-page apps: the address bar stays on the
+feed while you scroll through posts. So on a feed the button can't just use the
+tab's URL — that URL is the feed, and a feed is a link to *everybody* on it.
+Clicking the button on TikTok used to send `tiktok.com/en/` and get refused,
+which is why TikTok never worked.
+
+Instead it looks at what is actually on screen: the post card filling most of
+the window, and the link to that post inside that card. TikTok's cards carry no
+link to their own video — the only long number in one belongs to the *sound*, so
+using it would download the wrong thing. There the video's id comes from the
+player, or from the feed data the page was built from, paired with the author
+link beside it.
+
+If it can't tell, it says so rather than guessing:
+
+> Couldn't tell which post is on screen. Right-click the post itself and choose
+> "Download this".
+
+Right-clicking a post works on any site, always, because that hands over the
+exact link you pointed at.
 
 ## Requirements
 
