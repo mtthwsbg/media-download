@@ -19,10 +19,12 @@ Usage:
 """
 
 import io
+import re
 import shutil
 import sys
 import tempfile
 from collections import namedtuple
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -39,16 +41,18 @@ from bundle import find_ffmpeg
 #  Everything this tool writes lives under ONE folder, so it is obvious what
 #  put it there and it can be moved or deleted in one go:
 #
-#      Videos\Chrome Downloader Ext\<Platform>\<Kind>
+#      Videos\Chrome Downloader Ext\<Day>\<Platform>\<Kind>
 #
-#      ...\Instagram\Reels      ...\YouTube\Videos
-#      ...\Instagram\Posts      ...\YouTube\Shorts
+#      ...\2026-09-18\Instagram\Reels    ...\2026-09-18\YouTube\Videos
+#      ...\2026-09-18\Instagram\Posts    ...\2026-09-18\YouTube\Shorts
+#
+#  The day comes first so a day's haul sits together: the point is to be
+#  able to open today's folder and see what did and didn't come down.
 #
 #  If you rename a folder in Explorer, change the name here too.
 # ---------------------------------------------------------------
 HOME_VIDEOS = Path.home() / "Videos"
 VIDEOS = HOME_VIDEOS / "Chrome Downloader Ext"
-OTHER = VIDEOS / "Other"   # anything from a site not listed below
 
 # folder  - the platform's own folder under Videos
 # video   - where a video goes when the link doesn't say
@@ -250,25 +254,44 @@ def site_of(url):
     return None
 
 
-def pick_folder(url, media_kind="video"):
+def day_folder(when=None):
+    """
+    Today's folder under the master folder, as a local date.
+
+    Local, not UTC: the folder has to match the day you think it is, and an
+    evening download in New York is already tomorrow in UTC.
+
+    Read fresh on each call rather than fixed at import - the native host
+    stays running for days, so a date captured at start-up would keep filing
+    downloads under the day the host happened to launch.
+    """
+    return VIDEOS / (when or datetime.now()).strftime("%Y-%m-%d")
+
+
+def pick_folder(url, media_kind="video", day=None):
     """
     Look at the link and decide which folder this belongs in.
 
     media_kind ("video" or "post") is the fallback for links whose path does
     not say - a Reddit link, say, which looks the same whether the post turns
     out to be a clip or a set of pictures.
+
+    day is the dated folder to file under, and defaults to today. Pass one
+    explicitly to keep a single download together if it straddles midnight.
     """
+    root = day or day_folder()
+
     platform = site_of(url)
     if not platform:
-        return OTHER
+        return root / "Other"   # anything from a site not listed above
 
     path = (urlsplit(url).path or "").lower()
     for marker, bucket in platform.by_path:
         if marker in path:
-            return VIDEOS / platform.folder / bucket
+            return root / platform.folder / bucket
 
     bucket = platform.post if media_kind == "post" else platform.video
-    return VIDEOS / platform.folder / bucket
+    return root / platform.folder / bucket
 
 
 def container_reason(url):
@@ -922,6 +945,90 @@ def migrate_folders():
     return moved
 
 
+DAY_FOLDER = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _is_bundle(folder):
+    """A folder written by bundle.py - pictures, stills and a post.md."""
+    return (folder / "post.md").exists()
+
+
+def _day_of(item):
+    """
+    The day something was saved, as YYYY-MM-DD.
+
+    The earliest of created/modified wins: a file that was later renamed,
+    edited or synced carries a modified time from that, not from the day it
+    was downloaded, and the download is the thing being filed.
+    """
+    stat = item.stat()
+    stamp = min(stat.st_ctime, stat.st_mtime)
+    return datetime.fromtimestamp(stamp).strftime("%Y-%m-%d")
+
+
+def _dated_moves():
+    """
+    Work out what would have to move to sort the old flat tree into days.
+
+    Yields (source, destination) pairs and touches nothing. Everything below
+    a platform folder moves as one unit - a bundle folder keeps its pictures,
+    post.md and transcript together, dated by the folder rather than by
+    whichever file inside it happens to be oldest.
+    """
+    if not VIDEOS.is_dir():
+        return
+    for platform in sorted(VIDEOS.iterdir()):
+        # A folder already named for a date has been sorted; leave it be.
+        if not platform.is_dir() or DAY_FOLDER.match(platform.name):
+            continue
+        for item in sorted(platform.rglob("*")):
+            # Only the leaves move: a file, or a bundle folder. Walking into
+            # a bundle would scatter a post across its files' dates.
+            if item.is_dir() and not _is_bundle(item):
+                continue
+            if any(_is_bundle(VIDEOS / parent)
+                   for parent in item.relative_to(VIDEOS).parents
+                   if parent.parts):
+                continue  # inside a bundle that moves as a whole already
+            yield item, VIDEOS / _day_of(item) / item.relative_to(VIDEOS)
+
+
+def migrate_to_daily(dry_run=False):
+    """
+    Sort a pre-dates download folder into one folder per day.
+
+    Runs at start-up, does nothing once it has run, and never overwrites: a
+    name already taken at the destination is left where it is, because a
+    collision is a thing to look at rather than a thing to silently resolve.
+    """
+    done, skipped = [], []
+    for source, destination in list(_dated_moves()):
+        if destination.exists():
+            skipped.append((source, destination))
+            continue
+        if dry_run:
+            done.append((source, destination))
+            continue
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            done.append((source, destination))
+        except OSError:
+            skipped.append((source, destination))   # locked file, most likely
+
+    if not dry_run:
+        # Sweep up the folders the move emptied, deepest first so a parent is
+        # only considered once its children are gone. Anything still holding a
+        # file stays exactly where it is.
+        for folder in sorted(VIDEOS.rglob("*"), key=lambda p: -len(p.parts)):
+            if folder.is_dir() and not DAY_FOLDER.match(folder.name):
+                try:
+                    folder.rmdir()
+                except OSError:
+                    pass
+    return done, skipped
+
+
 def try_download(url):
     """Run fetch() but never crash - print the problem and carry on."""
     try:
@@ -948,6 +1055,7 @@ def main():
         pass
 
     migrate_folders()
+    migrate_to_daily()
 
     links = [clean_link(arg) for arg in sys.argv[1:] if clean_link(arg)]
 

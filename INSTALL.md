@@ -133,13 +133,17 @@ README explains why.
 ## Where the files go
 
 Everything goes under **one** folder in your own `Videos`, so it is obvious what
-put it there and you can move or delete the lot in one go. Inside it, files are
-sorted by the site they came from and then by what kind of thing they are.
-`install.ps1` creates the whole tree, so you can see where things will land
-before you download anything. Paths in the table are relative to it.
+put it there and you can move or delete the lot in one go. Inside it there is a
+folder for each day, and inside a day, files are sorted by the site they came
+from and then by what kind of thing they are. A day's folder appears the first
+time you save something that day. Paths in the table are relative to one.
 
 ```
 Videos\Chrome Downloader Ext\
+  2026-09-18\   <- one of these per day
+
+...and inside a day:
+
   Instagram\   Reels    Posts   Stories
   YouTube\     Videos   Shorts
   TikTok\      Videos   Photos

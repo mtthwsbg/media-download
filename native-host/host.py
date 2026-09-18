@@ -56,7 +56,8 @@ sys.stdout = sys.stderr
 # build download.py is packed inside the bundle and is already importable.
 if not FROZEN:
     sys.path.insert(0, str(PROJECT))
-from download import classify, clean_link, fetch, migrate_folders  # noqa: E402
+from download import (classify, clean_link, fetch,  # noqa: E402
+                      migrate_folders, migrate_to_daily)
 from yt_dlp.utils import DownloadError  # noqa: E402
 
 
@@ -389,6 +390,17 @@ def main():
             log(f"moved into the master folder: {', '.join(moved)}")
     except Exception as err:  # noqa: BLE001 - never block downloading over this
         log(f"folder migration skipped: {type(err).__name__}: {err}")
+
+    # Then sort that flat tree into one folder per day. Also a one-off: once
+    # every platform folder sits under a date, there is nothing left to move.
+    try:
+        sorted_items, left = migrate_to_daily()
+        if sorted_items:
+            log(f"sorted {len(sorted_items)} item(s) into dated folders")
+        if left:
+            log(f"{len(left)} item(s) left alone - the name was already taken")
+    except Exception as err:  # noqa: BLE001 - never block downloading over this
+        log(f"daily sort skipped: {type(err).__name__}: {err}")
 
     watcher = threading.Thread(target=reader_thread, daemon=True)
     watcher.start()

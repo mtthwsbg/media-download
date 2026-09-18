@@ -85,7 +85,7 @@ A **picture post** has no single file to open, so it becomes a folder, named
 `author - id` inside its platform's `Posts` folder:
 
 ```
-Videos\Chrome Downloader Ext\Instagram\Posts\someone - Cxyz123\
+Videos\Chrome Downloader Ext\2026-09-18\Instagram\Posts\someone - Cxyz123\
     post.md          caption, author, date, link — read this first
     01.jpg 02.jpg …  the pictures, in swipe order, 1024px on the long edge
     video-01.mp4     any clip the post also contained, kept whole
@@ -107,11 +107,17 @@ the transcript is simply absent — see *Requirements*.
 
 Everything lives under **one** folder in your own `Videos`, so it is obvious
 what put it there and you can move or delete the lot in one go. Inside it,
-files are sorted by the site they came from and then by what kind of thing
-they are:
+there is **a folder for each day**, and inside a day, files are sorted by the
+site they came from and then by what kind of thing they are:
 
 ```
 Videos\Chrome Downloader Ext\
+  2026-09-16\
+  2026-09-17\
+  2026-09-18\      <- a folder for each day you saved something
+
+...and inside any one of those days, the same split by site:
+
   Instagram\   Reels    Posts   Stories
   YouTube\     Videos   Shorts
   TikTok\      Videos   Photos
@@ -136,13 +142,14 @@ it about still downloads; it just lands in `Other`.
 has a Threads extractor, so there is nothing to hook up. Better an honest gap
 than a menu entry that always fails.
 
-`install.ps1` creates the whole tree up front, so you can see where things will
-land before the first download. If you used an earlier version that wrote
-straight into `Videos\`, those folders are moved inside the master folder the
-next time the helper starts — merged, never overwritten. `Screen Recordings` is
+A day's folder is made by the first download that needs it, so there is never
+an empty folder for a day you saved nothing. If you used an earlier version -
+one that wrote straight into `Videos\`, or one with no dated folders - what it
+left behind is sorted into place the next time the helper starts — merged, never overwritten. `Screen Recordings` is
 left alone, because it was never ours.
 
-Paths in the table below are all relative to `Videos\Chrome Downloader Ext\`.
+Paths in the table below are all relative to a day's folder, so in full:
+`Videos\Chrome Downloader Ext\2026-09-18\Instagram\Reels`.
 
 | Link | Lands in |
 |---|---|
