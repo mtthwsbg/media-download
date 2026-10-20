@@ -1035,7 +1035,10 @@ def _dated_moves():
         return
     for platform in sorted(VIDEOS.iterdir()):
         # A folder already named for a date has been sorted; leave it be.
-        if not platform.is_dir() or DAY_FOLDER.match(platform.name):
+        # "Reel Digest NNN" is reel-digest's own run folder: it keeps videos, raw files
+        # and results together, and filing it into a day split a running digest in two.
+        if (not platform.is_dir() or DAY_FOLDER.match(platform.name)
+                or platform.name.startswith("Reel Digest")):
             continue
         for item in sorted(platform.rglob("*")):
             # Only the leaves move: a file, or a bundle folder. Walking into
