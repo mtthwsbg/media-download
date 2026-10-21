@@ -168,3 +168,73 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 refresh();
+
+// --- Reel Digest ----------------------------------------------------------
+//
+// The old Reel Digest bookmarklet, unchanged, injected into the open saved
+// collection. It scrolls to the bottom, gathers every post code and copies
+// them. The popup closes right after so the page gets focus back, which the
+// clipboard write needs.
+
+const reels = document.getElementById("reels");
+
+chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
+  if (!tab || !/instagram\.com/.test(tab.url || "")) return;
+  reels.hidden = false;
+  reels.addEventListener("click", async () => {
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: reelDigest });
+    window.close();
+  });
+});
+
+async function reelDigest() {
+  if (!/instagram\.com/.test(location.host)) { console.log('Reel Digest: open your saved collection on instagram.com first'); return; }
+  document.getElementById('__rd')?.remove();
+  const box = document.createElement('div');
+  box.id = '__rd';
+  box.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;background:#111;color:#fff;font:14px system-ui;padding:14px 16px;border-radius:10px;box-shadow:0 6px 24px #0008;max-width:280px';
+  box.textContent = 'Reel Digest: scrolling the collection...';
+  document.body.appendChild(box);
+  const found = new Set();
+  let last = 0, still = 0;
+  while (still < 4) {
+    document.querySelectorAll('a[href*="/reel/"], a[href*="/p/"]').forEach((a) => {
+      const m = a.href.match(/\/(?:reel|p)\/([\w-]+)/);
+      if (m) found.add(m[1]);
+    });
+    box.textContent = 'Reel Digest: ' + found.size + ' found, scrolling...';
+    window.scrollTo(0, document.body.scrollHeight);
+    await new Promise((r) => setTimeout(r, 1200));
+    still = found.size === last ? still + 1 : 0;
+    last = found.size;
+  }
+  const text = [...found].join('\n');
+  window.__codes = [...found];
+  const done = (msg) => {
+    box.textContent = msg;
+    const x = document.createElement('div');
+    x.textContent = 'close';
+    x.style.cssText = 'margin-top:8px;opacity:.6;cursor:pointer;font-size:12px';
+    x.onclick = () => box.remove();
+    box.appendChild(x);
+  };
+  try {
+    window.focus();
+    await navigator.clipboard.writeText(text);
+    done(found.size + ' codes copied. Tell Claude: digest reels');
+  } catch (e) {
+    box.textContent = found.size + ' codes found. ';
+    const b = document.createElement('button');
+    b.textContent = 'Copy';
+    b.style.cssText = 'margin-left:6px;padding:4px 12px;border:0;border-radius:6px;background:#4c8bf5;color:#fff;cursor:pointer';
+    b.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        done(found.size + ' codes copied. Tell Claude: digest reels');
+      } catch (e2) {
+        done('Clipboard blocked. Press F12 and run: copy(__codes.join("\n"))');
+      }
+    };
+    box.appendChild(b);
+  }
+}

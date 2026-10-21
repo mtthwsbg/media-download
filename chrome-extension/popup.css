@@ -209,3 +209,5 @@ h2 {
 .logins { border-top: 1px solid var(--line); margin-top: 16px; }
 .logins .row { padding: 5px 8px; font-size: 12px; }
 .logins .row:hover { background: none; }
+
+[hidden] { display: none !important; }
